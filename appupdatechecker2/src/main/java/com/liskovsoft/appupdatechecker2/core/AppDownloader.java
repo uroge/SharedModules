@@ -83,35 +83,18 @@ public class AppDownloader {
         }
 
         private String downloadPackage(String uri) {
-            File cacheDir = FileHelpers.getCacheDir(mContext);
+            File cacheDir = mContext.getCacheDir();
             if (cacheDir == null) {
                 return null;
             }
             File outputFile = new File(cacheDir, CURRENT_APK);
             String path = null;
             try {
-                DownloadManager manager = new DownloadManager(mContext);
-                MyRequest request = new MyRequest(Uri.parse(uri));
-                request.setDestinationUri(Uri.fromFile(outputFile));
-                try {
-                    long id = manager.enqueue(request);
-                    int size = manager.getSizeForDownloadedFile(id);
-                    Uri destination = manager.getUriForDownloadedFile(id);
-
-                    if (destination != null) {
-                        // It could be a web page instead of apk
-                        if (size > mMinApkSizeBytes) {
-                            path = destination.getPath();
-                        } else { // do cleanup
-                            FileHelpers.delete(destination.getPath());
-                        }
-                    }
-                } catch (IllegalStateException ex) { // 403 or something else
-                    Log.d(TAG, ex.toString());
+                try(java.io.FileOutputStream output=new java.io.FileOutputStream(outputFile)){
+                    SecureUpdateTransport.fetch(uri,output,250L*1024*1024);
                 }
-            } catch (IllegalStateException ex) { // CANNOT OBTAIN WRITE PERMISSIONS
-                Log.e(TAG, ex.getMessage(), ex);
-            }
+                if(outputFile.length()>mMinApkSizeBytes)path=outputFile.getAbsolutePath();
+            }catch(Exception failure){outputFile.delete();}
             return path;
         }
     }

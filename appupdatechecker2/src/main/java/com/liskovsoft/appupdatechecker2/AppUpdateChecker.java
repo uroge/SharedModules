@@ -19,6 +19,7 @@ public class AppUpdateChecker implements AppVersionCheckerListener, AppDownloade
     private static final String TAG = AppUpdateChecker.class.getSimpleName();
     private static final int FRESH_TIME_MS = 15 * 60 * 1_000; // 15 minutes
     private static final int MIN_APK_SIZE_BYTES = 1_000_000; // 1 MB
+    private final java.util.concurrent.ExecutorService verificationWorker=java.util.concurrent.Executors.newSingleThreadExecutor();
     private final Context mContext;
     private final AppVersionChecker mVersionChecker;
     private final AppDownloader mDownloader;
@@ -113,12 +114,7 @@ public class AppUpdateChecker implements AppVersionCheckerListener, AppDownloade
                 mLatestVersionName = latestVersionName;
                 mLatestVersionNumber = latestVersionNumber;
 
-                if (latestVersionNumber == mSettingsManager.getLatestVersionNumber() &&
-                        checkApk(mSettingsManager.getApkPath())) {
-                    mListener.onUpdateFound(latestVersionName, changelog, mSettingsManager.getApkPath());
-                } else {
-                    mDownloader.download(downloadUris);
-                }
+                mDownloader.download(downloadUris);
             }
         } else {
             // No update is needed.
@@ -133,18 +129,16 @@ public class AppUpdateChecker implements AppVersionCheckerListener, AppDownloade
 
     @Override
     public void onApkDownloaded(String path) {
-        if (!checkApk(path)) {
-            return;
-        }
-
-        mSettingsManager.setApkPath(path);
-        mSettingsManager.setLatestVersionName(mLatestVersionName);
-        mSettingsManager.setLatestVersionNumber(mLatestVersionNumber);
-
-        Log.d(TAG, "App update received. Apk path: " + path);
-        Log.d(TAG, "App update received. Changelog: " + mChangeLog);
-
-        mListener.onUpdateFound(mLatestVersionName, mChangeLog, path);
+        verificationWorker.execute(()->{
+            boolean valid=checkApk(path);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(()->{
+                if(!valid){FileHelpers.delete(path);mListener.onUpdateError(new SecurityException("Update verification failed"));return;}
+                mSettingsManager.setApkPath(path);
+                mSettingsManager.setLatestVersionName(mLatestVersionName);
+                mSettingsManager.setLatestVersionNumber(mLatestVersionNumber);
+                mListener.onUpdateFound(mLatestVersionName,mChangeLog,path);
+            });
+        });
     }
 
     @Override
@@ -174,7 +168,14 @@ public class AppUpdateChecker implements AppVersionCheckerListener, AppDownloade
     }
 
     public void installUpdate() {
-        Helpers.installPackage(mContext, mSettingsManager.getApkPath());
+        final String path=mSettingsManager.getApkPath();
+        verificationWorker.execute(()->{
+            boolean valid=checkApk(path);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(()->{
+                if(valid)Helpers.installPackage(mContext,path);
+                else mListener.onUpdateError(new SecurityException("Update verification failed"));
+            });
+        });
     }
 
     public boolean isUpdateCheckEnabled() {
@@ -198,10 +199,20 @@ public class AppUpdateChecker implements AppVersionCheckerListener, AppDownloade
      */
     @SuppressWarnings("deprecation")
     private boolean checkApk(String path) {
-        if (!FileHelpers.isFreshFile(path, FRESH_TIME_MS)) {
-            return false;
-        }
-        PackageInfo archInfo = mContext.getPackageManager().getPackageArchiveInfo(path, 0);
-        return archInfo != null && mContext.getPackageName().equals(archInfo.packageName);
+        try {
+            if(path==null || mVersionChecker.getExpectedSha256()==null)return false;
+            android.content.pm.PackageManager manager=mContext.getPackageManager();
+            PackageInfo installed=manager.getPackageInfo(mContext.getPackageName(),android.content.pm.PackageManager.GET_SIGNATURES);
+            PackageInfo update=manager.getPackageArchiveInfo(path,android.content.pm.PackageManager.GET_SIGNATURES);
+            if(update==null || !installed.packageName.equals(update.packageName) || update.versionCode<=installed.versionCode ||
+                update.versionCode!=mVersionChecker.getExpectedVersion() || update.signatures==null || installed.signatures==null ||
+                update.signatures.length==0 || update.signatures.length!=installed.signatures.length)return false;
+            java.util.Set<String> known=new java.util.HashSet<>(),candidate=new java.util.HashSet<>();
+            for(android.content.pm.Signature signature:installed.signatures)known.add(signature.toCharsString());
+            for(android.content.pm.Signature signature:update.signatures)candidate.add(signature.toCharsString());
+            return com.liskovsoft.appupdatechecker2.core.UpdatePolicy.accepts(installed.packageName,installed.versionCode,known,
+                update.packageName,update.versionCode,mVersionChecker.getExpectedVersion(),candidate) &&
+                com.liskovsoft.appupdatechecker2.core.UpdatePolicy.sha256(new java.io.File(path)).equalsIgnoreCase(mVersionChecker.getExpectedSha256());
+        }catch(Exception failure){return false;}
     }
 }

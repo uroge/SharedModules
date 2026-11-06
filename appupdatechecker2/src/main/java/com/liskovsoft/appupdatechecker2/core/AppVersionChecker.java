@@ -60,6 +60,10 @@ public class AppVersionChecker {
     private final static String TAG = AppVersionChecker.class.getSimpleName();
     private int mCurrentAppVersion;
     private JSONObject mVersionInfo;
+    private String expectedSha256;
+    private int expectedVersion;
+    public String getExpectedSha256(){return expectedSha256;}
+    public int getExpectedVersion(){return expectedVersion;}
     private final Context mContext;
     private boolean mInProgress;
     private final AppVersionCheckerListener mListener;
@@ -133,6 +137,11 @@ public class AppVersionChecker {
         }
         final int latestVersionNumber = versionMap.firstKey();
         final String latestVersionName = versionMap.get(latestVersionNumber).getString("versionName");
+        if(mVersionInfo==null || !mContext.getPackageName().equals(mVersionInfo.getString("packageName")) ||
+            mVersionInfo.getInt("versionCode")!=latestVersionNumber)throw new JSONException("Invalid update identity");
+        expectedVersion=latestVersionNumber;
+        expectedSha256=mVersionInfo.getJSONObject("sha256").getString(DeviceHelpers.getPrimaryAbi());
+        if(!expectedSha256.matches("[0-9a-fA-F]{64}"))throw new JSONException("Invalid update digest");
 
         final Uri[] downloadUrls;
 
@@ -211,14 +220,7 @@ public class AppVersionChecker {
     /**
      * Send off an intent to start the download of the app.
      */
-    public void startUpgrade() {
-        try {
-            final Uri downloadUri = Uri.parse(mVersionInfo.getString("downloadUrl"));
-            mContext.startActivity(new Intent(Intent.ACTION_VIEW, downloadUri));
-        } catch (final JSONException e) {
-            e.printStackTrace();
-        }
-    }
+    public void startUpgrade() {throw new SecurityException("Use the verified in-app updater");}
 
     private GetVersionJsonTask mJsonUpdateTask;
 
@@ -253,12 +255,9 @@ public class AppVersionChecker {
         private JSONObject getJSON(Uri urlStr) {
             JSONObject jo = null;
             try {
-                DownloadManager manager = new DownloadManager(mContext);
-                MyRequest request = new MyRequest(urlStr);
-                long reqId = manager.enqueue(request);
-
-                InputStream content = manager.getStreamForDownloadedFile(reqId);
-                jo = new JSONObject(StreamUtils.inputStreamToString(content));
+                java.io.ByteArrayOutputStream content=new java.io.ByteArrayOutputStream();
+                SecureUpdateTransport.fetch(urlStr.toString(),content,1024*1024);
+                jo=new JSONObject(new String(content.toByteArray(),java.nio.charset.StandardCharsets.UTF_8));
             } catch (final Exception ex) {
                 // IllegalStateException | IllegalArgumentException | JSONException | SocketTimeoutException |
                 // SocketException | StreamResetException | SSLException | ProtocolException
@@ -276,7 +275,7 @@ public class AppVersionChecker {
             if (result != null) {
                 try {
                     triggerFromJson(result);
-                } catch (final JSONException e) {
+                } catch (final RuntimeException | JSONException e) {
                     String msg = "Error in JSON version file.";
                     Log.e(TAG, msg, e);
                     mListener.onCheckError(new IllegalStateException(msg));
