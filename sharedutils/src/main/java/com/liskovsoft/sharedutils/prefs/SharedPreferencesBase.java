@@ -165,6 +165,14 @@ public class SharedPreferencesBase {
         }
     }
 
+    /** Remove legacy plaintext only after its encrypted replacement has been verified. */
+    protected final void removeLegacyData(String key) {
+        if (mPrefs.contains(key) && !mPrefs.edit().remove(key).commit()) throw new IllegalStateException("Cannot remove legacy account preference");
+        File source=getStorageFile(key);
+        if(source.exists() && !source.delete()) throw new IllegalStateException("Cannot remove legacy account file");
+        if(mDataHashes!=null)mDataHashes.remove(key);
+    }
+
     private File getStorageFile(String key) {
         String prefsDir = getPrefsDir();
 

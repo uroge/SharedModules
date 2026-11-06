@@ -86,12 +86,52 @@ final public class GlobalPreferences extends SharedPreferencesBase {
     //    putString(MEDIA_SERVICE_ACCOUNT_DATA, data);
     //}
 
+    private boolean credentialErrorShown;
+    private synchronized String readCredential(String name) {
+        try {
+            SecureCredentialStore secure = new SecureCredentialStore(getContext());
+            if (secure.contains(name)) { String value=secure.read(name);removeLegacyCredential(name);return value; }
+            String legacy = getData(name);
+            if (legacy == null) return null;
+            secure.write(name, legacy);
+            removeLegacyCredential(name);
+            return legacy;
+        } catch (Exception failure) { credentialFailure(); return null; }
+    }
+    private synchronized void writeCredential(String name, String value) {
+        try {
+            new SecureCredentialStore(getContext()).write(name, value);
+            removeLegacyCredential(name);
+        } catch (Exception failure) { credentialFailure(); throw new IllegalStateException("Cannot save account securely; sign in again", failure); }
+    }
+    private void removeLegacyCredential(String name) {
+        removeLegacyData(name);
+    }
+    private void credentialFailure() {
+        if (credentialErrorShown) return;
+        credentialErrorShown = true;
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+            android.widget.Toast.makeText(getContext(), "Account storage unavailable. Use Accounts > Reset local sign-ins, then reopen the app and sign in again.", android.widget.Toast.LENGTH_LONG).show());
+    }
+
+    /** Explicit user recovery after key invalidation. Non-sensitive settings are preserved. */
+    public synchronized void resetAccountCredentials() {
+        try {
+            SecureCredentialStore store=new SecureCredentialStore(getContext());
+            store.delete(MEDIA_SERVICE_ACCOUNT_DATA);
+            store.delete(OAUTH2_ACCOUNT_DATA);
+            removeLegacyCredential(MEDIA_SERVICE_ACCOUNT_DATA);
+            removeLegacyCredential(OAUTH2_ACCOUNT_DATA);
+            credentialErrorShown=false;
+        } catch(Exception failure) {throw new IllegalStateException("Cannot reset local sign-ins",failure);}
+    }
+
     public String getMediaServiceAccountData() {
-        return getData(MEDIA_SERVICE_ACCOUNT_DATA);
+        return readCredential(MEDIA_SERVICE_ACCOUNT_DATA);
     }
 
     public void setMediaServiceAccountData(String data) {
-        setData(MEDIA_SERVICE_ACCOUNT_DATA, data);
+        writeCredential(MEDIA_SERVICE_ACCOUNT_DATA, data);
     }
 
     //public String getOAuth2AccountData() {
@@ -103,11 +143,11 @@ final public class GlobalPreferences extends SharedPreferencesBase {
     //}
 
     public String getOAuth2AccountData() {
-        return getData(OAUTH2_ACCOUNT_DATA);
+        return readCredential(OAUTH2_ACCOUNT_DATA);
     }
 
     public void setOAuth2AccountData(String data) {
-        setData(OAUTH2_ACCOUNT_DATA, data);
+        writeCredential(OAUTH2_ACCOUNT_DATA, data);
     }
 
     //public String getMediaServiceData() {
