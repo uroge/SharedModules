@@ -53,4 +53,13 @@ public class UpdatePolicyTest {
             file.delete();
         }
     }
+    @Test public void selectsCompatible32BitFallbackOn64BitX86() {
+        assertEquals("x86",UpdatePolicy.selectAbi(new String[]{"x86_64","x86"},new HashSet<>(Arrays.asList("arm64-v8a","armeabi-v7a","x86"))));
+    }
+    @Test public void prefersSupported64BitArmBuild() {
+        assertEquals("arm64-v8a",UpdatePolicy.selectAbi(new String[]{"arm64-v8a","armeabi-v7a"},new HashSet<>(Arrays.asList("arm64-v8a","armeabi-v7a"))));
+    }
+    @Test public void neverChoosesAnUnsupportedArchitecture() {
+        assertNull(UpdatePolicy.selectAbi(new String[]{"x86_64"},Collections.singleton("armeabi-v7a")));
+    }
 }

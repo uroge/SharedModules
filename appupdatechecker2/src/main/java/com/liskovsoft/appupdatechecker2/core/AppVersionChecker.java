@@ -140,21 +140,16 @@ public class AppVersionChecker {
         if(mVersionInfo==null || !mContext.getPackageName().equals(mVersionInfo.getString("packageName")) ||
             mVersionInfo.getInt("versionCode")!=latestVersionNumber)throw new JSONException("Invalid update identity");
         expectedVersion=latestVersionNumber;
-        expectedSha256=mVersionInfo.getJSONObject("sha256").getString(DeviceHelpers.getPrimaryAbi());
+        JSONObject hashes=mVersionInfo.getJSONObject("sha256");
+        java.util.Set<String> published=new java.util.HashSet<>();
+        Iterator<String> abiKeys=hashes.keys();while(abiKeys.hasNext())published.add(abiKeys.next());
+        String selectedAbi=UpdatePolicy.selectAbi(android.os.Build.SUPPORTED_ABIS,published);
+        if(selectedAbi==null)throw new JSONException("No compatible update architecture");
+        expectedSha256=hashes.getString(selectedAbi);
         if(!expectedSha256.matches("[0-9a-fA-F]{64}"))throw new JSONException("Invalid update digest");
-
-        final Uri[] downloadUrls;
-
-        if (mVersionInfo.has("downloadUrlList_" + DeviceHelpers.getPrimaryAbi())) {
-            JSONArray urls = mVersionInfo.getJSONArray("downloadUrlList_" + DeviceHelpers.getPrimaryAbi());
-            downloadUrls = parse(urls);
-        } else if (mVersionInfo.has("downloadUrlList")) {
-            JSONArray urls = mVersionInfo.getJSONArray("downloadUrlList");
-            downloadUrls = parse(urls);
-        } else {
-            String url = mVersionInfo.getString("downloadUrl");
-            downloadUrls = new Uri[]{Uri.parse(url)};
-        }
+        String downloadKey="armeabi-v7a".equals(selectedAbi)?"downloadUrlList":"downloadUrlList_"+selectedAbi;
+        final Uri[] downloadUrls=parse(mVersionInfo.getJSONArray(downloadKey));
+        if(downloadUrls.length==0)throw new JSONException("Missing update download");
 
         if (downloadUrls != null) {
             mListener.processDownloadUrls(downloadUrls);

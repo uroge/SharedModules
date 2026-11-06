@@ -24,6 +24,12 @@ public final class UpdatePolicy {
                 && installedSigners.equals(candidateSigners);
     }
 
+    public static String selectAbi(String[] supported, Set<String> published) {
+        if (supported == null || published == null) return null;
+        for (String abi : supported) if (published.contains(abi)) return abi;
+        return null;
+    }
+
     public static String sha256(File file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (FileInputStream input = new FileInputStream(file)) {
