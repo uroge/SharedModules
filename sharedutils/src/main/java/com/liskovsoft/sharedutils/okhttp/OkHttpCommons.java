@@ -207,50 +207,6 @@ final class OkHttpCommons {
      * Setting testMode configuration. If set as testMode, the connection will skip certification check<br/>
      * The error: CertPathValidatorException: Trust anchor for certification path not found
      */
-    @SuppressWarnings("deprecation")
-    private static void configureToIgnoreCertificate(OkHttpClient.Builder builder) {
-        if (VERSION.SDK_INT > 24) { // up to Android 7.0 (NOTE: 7.1 works fine)
-            return;
-        }
-
-        Log.w(TAG, "Ignore Ssl Certificate");
-        try {
-
-            // Create a trust manager that does not validate certificate chains
-            final TrustManager[] trustAllCerts = new TrustManager[] {
-                    new X509TrustManager() {
-                        @Override
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType)
-                                throws CertificateException {
-                        }
-
-                        @Override
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType)
-                                throws CertificateException {
-                        }
-
-                        @Override
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                            return new java.security.cert.X509Certificate[]{};
-                        }
-                    }
-            };
-
-            // Install the all-trusting trust manager
-            //final SSLContext sslContext = SSLContext.getInstance("SSL");
-            final SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
-            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
-            // Create an ssl socket factory with our all-trusting manager
-            final SSLSocketFactory sslSocketFactory = new Tls12SocketFactory(sslContext.getSocketFactory());
-
-            //builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
-            builder.sslSocketFactory(sslSocketFactory);
-            //builder.hostnameVerifier((hostname, session) -> true);
-        } catch (Exception e) {
-            Log.w(TAG, "Exception while configuring IgnoreSslCertificate: " + e, e);
-        }
-    }
-
     /**
      * Fix for {@link okhttp3.internal.http2.StreamResetException}: stream was reset: CANCEL<br/>
      * Force HTTP 1.1 protocol<br/>
@@ -284,10 +240,18 @@ final class OkHttpCommons {
                     break;
             }
         }
+        okBuilder.addNetworkInterceptor(chain -> {
+            okhttp3.Request request=chain.request();
+            if(!request.isHttps())throw new java.io.IOException("HTTPS is required");
+            String host=request.url().host().toLowerCase(java.util.Locale.ROOT);
+            boolean google=host.equals("youtube.com") || host.endsWith(".youtube.com") || host.equals("googleapis.com") || host.endsWith(".googleapis.com") || host.equals("google.com") || host.endsWith(".google.com") || host.endsWith(".googlevideo.com");
+            if(!google)request=request.newBuilder().removeHeader("Authorization").removeHeader("Cookie").build();
+            return chain.proceed(request);
+        });
         setupProxy(okBuilder); // proxy configured in system props
         setupConnectionFix(okBuilder);
         setupConnectionParams(okBuilder);
-        configureToIgnoreCertificate(okBuilder);
+
         fixStreamResetError(okBuilder); // Should I move the line to Retrofit utils?
         enableDecompression(okBuilder);
         //enableRateLimiter(okBuilder)
@@ -318,15 +282,7 @@ final class OkHttpCommons {
     }
 
     private static void debugSetup(OkHttpClient.Builder okBuilder) {
-        if (BuildConfig.DEBUG) {
-            // Profiler could cause OutOfMemoryError when testing.
-            // Also outputs to logcat tons of info.
-            // If you enable it to all requests - expect slowdowns.
-            if (enableProfiler) {
-                addProfiler(okBuilder);
-            }
-            addLogger(okBuilder);
-        }
+        // No release profiling or HTTP URL logging; credentials may occur in queries.
     }
 
     private static void addProfiler(OkHttpClient.Builder okBuilder) {

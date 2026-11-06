@@ -518,7 +518,7 @@ public class FileHelpers {
     public static Uri getFileUri(Context context, String filePath) {
         // If your targetSdkVersion is 24 (Android 7.0) or higher, we have to use FileProvider class
         // https://stackoverflow.com/questions/38200282/android-os-fileuriexposedexception-file-storage-emulated-0-test-txt-exposed
-        if (VERSION.SDK_INT >= 24) {
+        if (VERSION.SDK_INT >= 23) {
             try {
                 return FileProvider.getUriForFile(context, context.getApplicationContext().getPackageName() + ".update_provider", new File(filePath));
             } catch (IllegalArgumentException e) {

@@ -30,21 +30,8 @@ object NetworkHelpers {
      */
     @JvmStatic
     fun getDohURLConnection(url: URL): HttpURLConnection {
-        if (Build.VERSION.SDK_INT <= 19) {
-            return getBestHttpsURLConnection(url)
-        }
-
-        return DohProviders.cachedGoogle?.let {
-            val ipAddress = it.lookup(url.host)
-
-            val fullUrl = "${url.protocol}://${ipAddress[0].hostName}${url.path}?${url.query}"
-            Log.d("NetworkHelpers", fullUrl)
-
-            val conn = getBestHttpsURLConnection(URL(fullUrl))
-            // fix SSLPeerUnverifiedException (because we're connecting by ip)
-            conn.hostnameVerifier = HostnameVerifier { _, _ -> true }
-            conn
-        } ?: getBestHttpsURLConnection(url)
+        // Keep the original TLS hostname. Never replace it with an IP and bypass verification.
+        return getBestHttpsURLConnection(url)
     }
 
     private fun getBestHttpsURLConnection(url: URL): HttpsURLConnection = NetCipher.getCompatibleHttpsURLConnection(url)

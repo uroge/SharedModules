@@ -9,10 +9,12 @@ public class Log {
     private static MyLogger sLogger = new SystemLogger();
 
     public static void d(String tag, Object msg, Object... formatArgs) {
+        if (!com.liskovsoft.sharedutils.BuildConfig.DEBUG) return;
         sLogger.d(tag, formatMsg(msg, formatArgs));
     }
 
     public static void i(String tag, Object msg, Object... formatArgs) {
+        if (!com.liskovsoft.sharedutils.BuildConfig.DEBUG) return;
         sLogger.i(tag, formatMsg(msg, formatArgs));
     }
 
@@ -81,6 +83,6 @@ public class Log {
             result = msg.toString();
         }
 
-        return result;
+        return result == null ? null : result.replaceAll("https?://[^\\s]+", "<url>").replaceAll("(?i)(bearer|refresh_token|access_token|device_code|pairingCode)[=: ]+[^ ,;]+", "$1=<redacted>");
     }
 }
